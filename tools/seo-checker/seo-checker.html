@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Checker (Local)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --line: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #0b1024 0%, #0f172a 100%);
+      min-height: 100vh;
+    }
+    .container {
+      width: min(1100px, 92vw);
+      margin: 32px auto;
+      display: grid;
+      gap: 20px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.5rem; }
+    p { margin: 0 0 10px; color: var(--muted); }
+    textarea {
+      width: 100%;
+      min-height: 280px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #020617;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      padding: 12px;
+      resize: vertical;
+    }
+    .actions { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .primary { background: #2563eb; color: #fff; }
+    .secondary { background: #334155; color: #fff; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+    }
+    .result {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #0b1220;
+    }
+    .status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .ok { background: color-mix(in srgb, var(--ok) 25%, transparent); color: #86efac; }
+    .warn { background: color-mix(in srgb, var(--warn) 25%, transparent); color: #fcd34d; }
+    .bad { background: color-mix(in srgb, var(--bad) 25%, transparent); color: #fca5a5; }
+    ul { margin: 6px 0 0; padding-left: 18px; }
+    code { background: #1f2937; padding: 0 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="card">
+      <h1>SEO チェッカー（ローカル）</h1>
+      <p>HTMLソースを貼り付けて、主要SEO項目をまとめてチェックします。</p>
+      <textarea id="htmlInput" placeholder="ここにHTMLを貼り付けてください..."></textarea>
+      <div class="actions">
+        <button class="primary" id="runBtn">チェック実行</button>
+        <button class="secondary" id="sampleBtn">サンプル入力</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div id="summary"></div>
+      <div class="grid" id="results"></div>
+    </section>
+  </div>
+
+  <script>
+    const checks = [
+      { key: 'title', label: 'title' },
+      { key: 'metaDescription', label: 'meta description' },
+      { key: 'h1', label: 'h1' },
+      { key: 'canonical', label: 'canonical' },
+      { key: 'robots', label: 'robots' },
+      { key: 'ogp', label: 'OGP' },
+      { key: 'viewport', label: 'viewport' },
+      { key: 'alt', label: 'alt' },
+      { key: 'headingGap', label: '見出し段差' },
+      { key: 'jsonLd', label: 'JSON-LD' }
+    ];
+
+    function statusClass(level) {
+      return level === 'OK' ? 'ok' : level === 'WARN' ? 'warn' : 'bad';
+    }
+
+    function parseHTML(html) {
+      return new DOMParser().parseFromString(html, 'text/html');
+    }
+
+    function runChecks(doc) {
+      const results = {};
+
+      const title = (doc.querySelector('title')?.textContent || '').trim();
+      results.title = !title
+        ? { level: 'NG', note: 'title が見つかりません。' }
+        : title.length < 20 || title.length > 65
+          ? { level: 'WARN', note: `title 文字数: ${title.length}（推奨 20〜65）` }
+          : { level: 'OK', note: `title 文字数: ${title.length}` };
+
+      const description = (doc.querySelector('meta[name="description"]')?.getAttribute('content') || '').trim();
+      results.metaDescription = !description
+        ? { level: 'NG', note: 'meta description が見つかりません。' }
+        : description.length < 60 || description.length > 160
+          ? { level: 'WARN', note: `description 文字数: ${description.length}（推奨 60〜160）` }
+          : { level: 'OK', note: `description 文字数: ${description.length}` };
+
+      const h1s = [...doc.querySelectorAll('h1')];
+      results.h1 = h1s.length === 1
+        ? { level: 'OK', note: 'h1 は1つです。' }
+        : h1s.length === 0
+          ? { level: 'NG', note: 'h1 がありません。' }
+          : { level: 'WARN', note: `h1 が ${h1s.length} 個あります。` };
+
+      const canonical = doc.querySelector('link[rel="canonical"]')?.getAttribute('href')?.trim() || '';
+      results.canonical = canonical
+        ? { level: 'OK', note: `<code>${canonical}</code>` }
+        : { level: 'NG', note: 'canonical が見つかりません。' };
+
+      const robots = doc.querySelector('meta[name="robots"]')?.getAttribute('content')?.trim() || '';
+      results.robots = robots
+        ? { level: 'OK', note: `<code>${robots}</code>` }
+        : { level: 'WARN', note: 'robots が未設定です。' };
+
+      const requiredOgp = ['og:title', 'og:description', 'og:image', 'og:url'];
+      const missingOgp = requiredOgp.filter(p => !doc.querySelector(`meta[property="${p}"]`)?.getAttribute('content')?.trim());
+      results.ogp = missingOgp.length === 0
+        ? { level: 'OK', note: '主要OGPタグが設定されています。' }
+        : { level: 'WARN', note: `不足: ${missingOgp.join(', ')}` };
+
+      const viewport = doc.querySelector('meta[name="viewport"]')?.getAttribute('content')?.trim() || '';
+      results.viewport = viewport
+        ? { level: 'OK', note: `<code>${viewport}</code>` }
+        : { level: 'NG', note: 'viewport がありません。' };
+
+      const imgs = [...doc.querySelectorAll('img')];
+      const missingAlt = imgs.filter(img => !img.hasAttribute('alt') || img.getAttribute('alt') === null || img.getAttribute('alt').trim() === '');
+      results.alt = imgs.length === 0
+        ? { level: 'WARN', note: 'img タグがありません。' }
+        : missingAlt.length === 0
+          ? { level: 'OK', note: `img ${imgs.length}件すべて alt あり。` }
+          : { level: 'WARN', note: `alt なし: ${missingAlt.length}/${imgs.length}` };
+
+      const headings = [...doc.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+      const gaps = [];
+      for (let i = 1; i < headings.length; i++) {
+        const prev = Number(headings[i - 1].tagName.slice(1));
+        const current = Number(headings[i].tagName.slice(1));
+        if (current - prev > 1) gaps.push(`${headings[i - 1].tagName} → ${headings[i].tagName}`);
+      }
+      results.headingGap = gaps.length === 0
+        ? { level: 'OK', note: '見出し階層の大きな飛びはありません。' }
+        : { level: 'WARN', note: `段差あり: ${gaps.join(' / ')}` };
+
+      const jsonLdScripts = [...doc.querySelectorAll('script[type="application/ld+json"]')];
+      if (jsonLdScripts.length === 0) {
+        results.jsonLd = { level: 'WARN', note: 'JSON-LD がありません。' };
+      } else {
+        let invalid = 0;
+        for (const script of jsonLdScripts) {
+          try { JSON.parse(script.textContent || ''); } catch { invalid++; }
+        }
+        results.jsonLd = invalid === 0
+          ? { level: 'OK', note: `JSON-LD ${jsonLdScripts.length}件（すべて有効）` }
+          : { level: 'WARN', note: `JSON-LD ${jsonLdScripts.length}件中 ${invalid}件が不正JSON` };
+      }
+
+      return results;
+    }
+
+    function render(results) {
+      const list = checks.map((item) => ({ name: item.label, ...results[item.key] }));
+      const ok = list.filter(r => r.level === 'OK').length;
+      const warn = list.filter(r => r.level === 'WARN').length;
+      const ng = list.filter(r => r.level === 'NG').length;
+
+      document.getElementById('summary').innerHTML = `
+        <p>結果: <strong>${ok}</strong> OK / <strong>${warn}</strong> WARN / <strong>${ng}</strong> NG</p>
+      `;
+
+      document.getElementById('results').innerHTML = list.map(r => `
+        <article class="result">
+          <div class="status ${statusClass(r.level)}">${r.level}</div>
+          <h3>${r.name}</h3>
+          <p>${r.note}</p>
+        </article>
+      `).join('');
+    }
+
+    document.getElementById('runBtn').addEventListener('click', () => {
+      const html = document.getElementById('htmlInput').value.trim();
+      if (!html) {
+        alert('HTMLを貼り付けてください。');
+        return;
+      }
+      const doc = parseHTML(html);
+      render(runChecks(doc));
+    });
+
+    document.getElementById('sampleBtn').addEventListener('click', () => {
+      document.getElementById('htmlInput').value = `<!doctype html>
+<html lang="ja">
+<head>
+  <title>サンプルページのタイトルです</title>
+  <meta name="description" content="これはSEOチェックツール用のサンプルdescriptionです。適度な文字数で入力しています。">
+  <meta name="robots" content="index,follow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="canonical" href="https://example.com/sample">
+  <meta property="og:title" content="OGサンプルタイトル">
+  <meta property="og:description" content="OGサンプルディスクリプション">
+  <meta property="og:image" content="https://example.com/ogp.png">
+  <meta property="og:url" content="https://example.com/sample">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"sample"}</script>
+</head>
+<body>
+  <h1>見出し1</h1>
+  <h2>見出し2</h2>
+  <img src="x.jpg" alt="イメージ">
+</body>
+</html>`;
+    });
+  </script>
+</body>
+</html>
